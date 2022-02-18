@@ -60,17 +60,17 @@ class DownstreamConnection(Connection):
         })
 
     def passthrough_from_downstream_quiet(self, cmd, data):
-        print 'received command %r len %d downstream' % (cmd, len(data))
+        print('received command %r len %d downstream' % (cmd, len(data)))
         self.remote.send_queue.put((cmd, data))
 
     def passthrough_from_downstream(self, cmd, data):
-        print 'received command %r len %d downstream' % (cmd, len(data))
+        print('received command %r len %d downstream' % (cmd, len(data)))
         hexdump.hexdump(data)
 
         self.remote.send_queue.put((cmd, data))
 
     def pong(self, cmd, pong_data):
-        print 'Received pong'
+        print('Received pong')
         self.remote.send_queue.put((cmd, pong_data))
 
     def log(self, cmd, log_info):
@@ -81,7 +81,7 @@ class DownstreamConnection(Connection):
         pass
 
     def client_hash(self, cmd, client_hash):
-        print 'received client hash downstream'
+        print('received client hash downstream')
         hexdump.hexdump(client_hash)
         self.remote.send_queue.put((cmd, client_hash))
 
@@ -91,18 +91,18 @@ class DownstreamConnection(Connection):
             # final
             self.final = True
         else:
-            print '!!! not final flag'
+            print('!!! not final flag')
             self.final = False
 
         seq, frames = self.mercury_parser.parse_packet(payload[:])
-        print 'had mercury cmd %r downstream' % cmd
+        print('had mercury cmd %r downstream' % cmd)
         # print 'seq %s, |frames| = %d' % (seq.encode('hex'), len(frames))
 
         request = proto.Header()
         request.ParseFromString(frames[0])
 
-        print 'request was'
-        print request
+        print('request was')
+        print(request)
 
         payloads = frames[1:]
 
@@ -125,7 +125,7 @@ class DownstreamConnection(Connection):
 
         if request.uri == 'hm://event-service/v1/events':
             if '127.0.0.1' in mercury_payload:
-                print '** warning: ignoring mercury request to %s' % request.uri
+                print('** warning: ignoring mercury request to %s' % request.uri)
                 return
 
         # if 'hm://pusher' in request.uri or 'hm://identity/' in request.uri:
@@ -138,8 +138,8 @@ class DownstreamConnection(Connection):
         self.remote.send_queue.put((cmd, payload))
 
     def login(self, cmd, client_response_encrypted):
-        print 'downstream attempted to login with:'
-        print client_response_encrypted
+        print('downstream attempted to login with:')
+        print(client_response_encrypted)
 
         self.remote.send_queue.put((cmd, client_response_encrypted.SerializeToString()))
 
@@ -190,45 +190,45 @@ class UpstreamConnection(Connection):
         })
 
     def login_success(self, cmd, resp):
-        print 'upstream reports login success!'
-        print resp
+        print('upstream reports login success!')
+        print(resp)
 
         self.remote.send_queue.put((cmd, resp.SerializeToString()))
 
     def passthrough_from_upstream_quiet(self, cmd, data):
-        print 'received command %r len %d upstream' % (cmd, len(data))
+        print('received command %r len %d upstream' % (cmd, len(data)))
         self.remote.send_queue.put((cmd, data))
 
     def passthrough_from_upstream(self, cmd, data):
-        print 'received command %r len %d upstream' % (cmd, len(data))
+        print('received command %r len %d upstream' % (cmd, len(data)))
         hexdump.hexdump(data)
 
         self.remote.send_queue.put((cmd, data))
 
     def unk_for_auth(self, cmd, data):
-        print 'received weird auth cmd %r upstream' % cmd
+        print('received weird auth cmd %r upstream' % cmd)
         hexdump.hexdump(data)
 
         self.remote.send_queue.put((cmd, data))
 
     def handle_prodinfo(self, cmd, prodxml):
         if not os.path.exists(PRODINFO_FILENAME):
-            print 'saving prodinfo to', PRODINFO_FILENAME
+            print('saving prodinfo to', PRODINFO_FILENAME)
             with open(PRODINFO_FILENAME, 'wb') as f:
                 f.write(prodxml)
         else:
-            print 'using prodinfo data from', PRODINFO_FILENAME
+            print('using prodinfo data from', PRODINFO_FILENAME)
             with open(PRODINFO_FILENAME, 'rb') as f:
                 prodxml = f.read()
 
         self.remote.send_queue.put((cmd, prodxml))
 
     def handle_country_code(self, cmd, country_code):
-        print 'received country code', country_code, 'from upstream'
+        print('received country code', country_code, 'from upstream')
         self.remote.send_queue.put((cmd, country_code))
 
     def handle_secret_blk(self, cmd, secret_data):
-        print 'received secret block upstream'
+        print('received secret block upstream')
         self.remote.send_queue.put((cmd, secret_data))
 
         # client uses this to sign their offline key
@@ -237,11 +237,11 @@ class UpstreamConnection(Connection):
         # see despotify/src/lib/handlers.c - handle_secret_block()
 
     def ping(self, cmd, ping_data):
-        print 'received ping from upstream'
+        print('received ping from upstream')
         self.remote.send_queue.put((cmd, ping_data))
 
     def pongack(self, cmd, pong_ack_data):
-        print 'received pong-ack from upstream'
+        print('received pong-ack from upstream')
         self.remote.send_queue.put((cmd, pong_ack_data))
 
     def handle_mercury_upstream(self, cmd, payload):
@@ -250,11 +250,11 @@ class UpstreamConnection(Connection):
 
         seq, frames = self.mercury_parser.parse_packet(payload[:])
         if frames is None:
-            print 'received incomplete mercury response with cmd %r upstream' % cmd
+            print('received incomplete mercury response with cmd %r upstream' % cmd)
             self.remote.send_queue.put((cmd, payload))
             return
 
-        print 'received complete mercury response with cmd %r upstream' % cmd
+        print('received complete mercury response with cmd %r upstream' % cmd)
 
         response = proto.Header()
         response.ParseFromString(frames[0])
@@ -277,7 +277,7 @@ class UpstreamConnection(Connection):
         #     # last is some hash (probably sha256 of something)
         #     pusher_fields[2] = 'tcp://'
 
-        print response
+        print(response)
 
         if len(frames[1:]) > 0:
             # print payload if we have it here
@@ -293,7 +293,7 @@ class UpstreamConnection(Connection):
 
                 if 'application/json' in response.content_type:
                     j = json.loads(payload_frame)
-                    print json.dumps(j, indent=2)
+                    print(json.dumps(j, indent=2))
                 else:
                     hexdump.hexdump(payload_frame)
 

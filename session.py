@@ -20,56 +20,54 @@ class ProxyManager(object):
         self.upstream = UpstreamConnection(SpotifyCodec(upstream_sock, 'upstream'))
         self.downstream = DownstreamConnection(SpotifyCodec(downstream_sock, 'downstream'))
 
-        self.proxy = ProxyConnection([self.upstream, self.downstream])
+        self.proxy = ProxyConnection({self.upstream, self.downstream})
     
     def run(self):
         self.proxy.run()
 
     def connect(self):
-        # read hello from downstream
-        downstream_hello, downstream_client_bytes = self.downstream.codec.recv_unencrypted(proto.ClientHello, initial=True)
+        # TODO: Single set of keys for both connections?
+        downstream_keys = Crypto().generate_keys()
+        upstream_keys = Crypto().generate_keys()
 
-        # inject our public key into client's hello
+        # read hello from client downstream
+        downstream_hello, downstream_hello_bytes = self.downstream.codec.recv_unencrypted(proto.ClientHello, initial=True)
+        downstream_keys.compute_shared_key(downstream_hello.login_crypto_hello.diffie_hellman.gc)
+
+        # inject our public key into client's hello and pass it upstream
         upstream_hello = deepcopy(downstream_hello)
-        upstream_hello.login_crypto_hello.diffie_hellman.gc = self.upstream.codec.crypto.public_key
+        upstream_hello.login_crypto_hello.diffie_hellman.gc = upstream_keys.public_key_bytes
+        upstream_hello_bytes = self.upstream.codec.send_unencrypted(upstream_hello.SerializeToString(), initial=True)
 
-        # send our hello upstream
-        upstream_client_bytes = self.upstream.codec.send_unencrypted(upstream_hello.SerializeToString(), initial=True)
-
-        # assert len(downstream_client_bytes) == len(upstream_client_bytes)
+        # assert len(downstream_hello_bytes) == len(upstream_hello_bytes)
 
         # read upstream response back
-        upstream_ap_resp, upstream_server_bytes = self.upstream.codec.recv_unencrypted(proto.APResponseMessage)
-
-        # compute shared secrets
-        self.upstream.codec.crypto.compute_shared_key(upstream_ap_resp.challenge.login_crypto_challenge.diffie_hellman.gs)
-        self.downstream.codec.crypto.compute_shared_key(downstream_hello.login_crypto_hello.diffie_hellman.gc)
+        upstream_resp, upstream_resp_bytes = self.upstream.codec.recv_unencrypted(proto.APResponseMessage)
+        upstream_keys.compute_shared_key(upstream_resp.challenge.login_crypto_challenge.diffie_hellman.gs)
 
         # give downstream our (signed) public key
-        downstream_ap_resp = deepcopy(upstream_ap_resp)
-        downstream_ap_resp.challenge.login_crypto_challenge.diffie_hellman.gs = self.downstream.codec.crypto.public_key
-        downstream_ap_resp.challenge.login_crypto_challenge.diffie_hellman.gs_signature = self.downstream.codec.crypto.sign_public_key('ourserver_private_key.pem')
-        
-        # finally send it
-        downstream_server_bytes = self.downstream.codec.send_unencrypted(downstream_ap_resp.SerializeToString())
+        downstream_resp = deepcopy(upstream_resp)
+        downstream_resp.challenge.login_crypto_challenge.diffie_hellman.gs = downstream_keys.public_key_bytes
+        downstream_resp.challenge.login_crypto_challenge.diffie_hellman.gs_signature = downstream_keys.sign_public_key()
+        downstream_resp_bytes = self.downstream.codec.send_unencrypted(downstream_resp.SerializeToString())
+        # assert len(downstream_resp_bytes) == len(upstream_resp_bytes)
 
-        # assert len(downstream_server_bytes) == len(upstream_server_bytes)
+        downstream_keys.compute_challenge(downstream_hello_bytes, downstream_resp_bytes)
+        upstream_keys.compute_challenge(upstream_hello_bytes, upstream_resp_bytes)
 
-        # calculate hmac challenges
-        downstream_challenge = self.downstream.codec.setup_encrypted_streams(downstream_client_bytes, downstream_server_bytes)
-        upstream_challenge = self.upstream.codec.setup_encrypted_streams(upstream_client_bytes, upstream_server_bytes, swap=True)
-
-        # receive downstream's challenge
+        # receive downstream's challenge and compare with ours
         downstream_challenge_resp, _ = self.downstream.codec.recv_unencrypted(proto.ClientResponsePlaintext)
-
-        if downstream_challenge != downstream_challenge_resp.login_crypto_response.diffie_hellman.hmac:
-            print 'error: challenge differed'
-            print '\tdownstream client challenge is 0x%s' % downstream_challenge_resp.login_crypto_response.diffie_hellman.hmac.encode ('hex')
-            print '\tdownstream server challenge is 0x%s' % downstream_challenge.encode('hex')
+        if downstream_keys.challenge != downstream_challenge_resp.login_crypto_response.diffie_hellman.hmac:
+            print('error: challenge differed')
+            print('\tdownstream client challenge is 0x%s' % downstream_challenge_resp.login_crypto_response.diffie_hellman.hmac.hex())
+            print('\tdownstream server challenge is 0x%s' % downstream_keys.challenge.hex())
             return
-
+        
         # send computed challange back upstream
-        upstream_challenge_protobuf = deepcopy(downstream_challenge_resp)
-        upstream_challenge_protobuf.login_crypto_response.diffie_hellman.hmac = upstream_challenge
+        upstream_challenge_resp = deepcopy(downstream_challenge_resp)
+        upstream_challenge_resp.login_crypto_response.diffie_hellman.hmac = upstream_keys.challenge
+        self.upstream.codec.send_unencrypted(upstream_challenge_resp.SerializeToString())
 
-        self.upstream.codec.send_unencrypted(upstream_challenge_protobuf.SerializeToString())
+        # All done, downstream keys swapped as we are not the client in this instance.
+        self.upstream.codec.upgrade(send_key=downstream_keys.send_key, recv_key=downstream_keys.recv_key)
+        self.downstream.codec.upgrade(send_key=downstream_keys.recv_key, recv_key=downstream_keys.send_key)

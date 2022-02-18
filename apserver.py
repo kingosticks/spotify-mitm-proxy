@@ -1,4 +1,4 @@
-import SocketServer
+import socketserver
 import proto
 import struct
 import random
@@ -18,17 +18,17 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 
-PROTOCOL_VERSION = [0, 4]
 
-SPOTIFY_HOST = 'guc3-accesspoint-a-zk36.ap.spotify.com'
+SPOTIFY_HOST = '104.199.65.124'
 SPOTIFY_PORT = 4070
 
 import session
 
-class SpotifyTCPHandler(SocketServer.BaseRequestHandler):
+class SpotifyTCPHandler(socketserver.BaseRequestHandler):
     allow_reuse_address = True
 
     def handle(self):
+        print('handling')
         self.request.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         self.request.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8192 * 32)
         self.request.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 8192 * 32)
@@ -37,6 +37,7 @@ class SpotifyTCPHandler(SocketServer.BaseRequestHandler):
             try:
                 upstream_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 upstream_sock.connect((SPOTIFY_HOST, SPOTIFY_PORT))
+                #print('Connected upstream sock')
 
                 upstream_sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                 upstream_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8192 * 32)
@@ -44,20 +45,21 @@ class SpotifyTCPHandler(SocketServer.BaseRequestHandler):
 
                 proxy = session.ProxyManager(upstream_sock, self.request)
 
-                print 'Making proxy connection to', SPOTIFY_HOST, SPOTIFY_PORT
+                print('Making proxy connection to', SPOTIFY_HOST, SPOTIFY_PORT)
                 proxy.connect()
-                print
+                print()
                 proxy.run()
             except KeyboardInterrupt:
                 return
-            except:
-                pass
+            except Exception as exc:
+                print(exc)
+                pexit(1)
 
 
 if __name__ == "__main__":
     HOST, PORT = "0.0.0.0", 4070
-    server = SocketServer.TCPServer((HOST, PORT), SpotifyTCPHandler)
+    server = socketserver.TCPServer((HOST, PORT), SpotifyTCPHandler)
     server.allow_reuse_address = True
-    print "Ready to go..."
-    server.handle_request()
-    #server.serve_forever()
+    print("Ready to go... on %s:%s" % (HOST, PORT))
+    #server.handle_request()
+    server.serve_forever()

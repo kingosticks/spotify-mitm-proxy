@@ -2,7 +2,7 @@
 # Licensed under the MIT License.
 # Modified by Alex Hixon
 
-from __future__ import absolute_import, division, print_function
+
 
 import struct
 # from hexdump import dump as hexdump
@@ -115,9 +115,7 @@ class Mercury(MercuryParser):
 
     def multiget(self, endpoint, urls, callback=None, schema=None):
         def cb(response, payload):
-            payloads = map(
-                    lambda r: decode_payload(r.body, schema=schema, mime=r.mime),
-                    payload.reply)
+            payloads = [decode_payload(r.body, schema=schema, mime=r.mime) for r in payload.reply]
             callback(payloads)
 
         payload = proto.MercuryMultiGetRequest()
@@ -189,9 +187,7 @@ class Mercury(MercuryParser):
             return
 
         callback, schema = cs
-        payloads = map(
-                lambda f: decode_payload(f, schema=schema, mime=response.mime),
-                frames[1:])
+        payloads = [decode_payload(f, schema=schema, mime=response.mime) for f in frames[1:]]
 
         callback(response, *payloads)
         if cmd != 0xb5:

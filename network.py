@@ -1,6 +1,6 @@
 import queue
 import threading
-from select import select
+import selectors
 
 import sys
 import hexdump
@@ -8,15 +8,16 @@ from commands import SpotifyCommand
 
 class ProxyConnection(object):
     def __init__(self, conns):
-        self.conns = conns
+        self.conns = set(conns)
         self.incoming_queue = queue.Queue()
 
         assert len(conns) <= 2
-        self.conn_mapping = dict(zip(conns, conns[1:] + [conns[0]]))
+        # self.conn_mapping = dict(zip(conns, reversed(conns)))
 
-        for conn in conns:
-            conn.remote = self.conn_mapping[conn]
+        for conn in self.conns:
+            conn.remote = self.conns - set(conn)
 
+        self.sel = selectors.DefaultSelector()
         self.network_threads = {}
 
     # select happens on one thread, which polls sockets for reading/writing
@@ -51,7 +52,7 @@ class ProxyConnection(object):
 
     def run(self):
         for conn in self.conns:
-            print 'starting select thread for', conn
+            print(f"Starting select thread for {conn}")
 
             self.network_threads[conn] = threading.Thread(target=self.select_loop_for_conn, args=[conn])
             self.network_threads[conn].daemon = True
@@ -61,15 +62,16 @@ class ProxyConnection(object):
         # self.process_thread.daemon = True
         # self.process_thread.start()
 
-        print 'joining on network threads'
-        map(lambda thread: thread.join(), self.network_threads.values())
+        print('joining on network threads')
+        for t in self.network_threads.values():
+            t.join()
         # self.process_incoming_queue()
 
     def select_loop_for_conn(self, conn):
         while self.select_on_connection(conn):
             pass
 
-        print 'select loop died'
+        print('select loop died')
 
     def select_on_connection(self, conn):
         # print 'selecting, with timeout=5'
@@ -77,48 +79,15 @@ class ProxyConnection(object):
         for conn in read:
             # print conn, 'is ready to read'
             if conn in execptional:
-                print conn, 'is exceptional, no read today'
+                print(conn, 'is exceptional, no read today')
                 continue
 
-            # print conn, 'is ready to read, reading to incoming_queue'
-            # cmd, payload = conn.codec.recv_encrypted()
-            # if not cmd:
-            #     print '\twasn\'t actually ready yet it seems'
-            #     continue
-
-            # self.incoming_queue.put((conn, (SpotifyCommand(cmd), payload)))
-
-            # print 'receiving from', conn
-            if conn.codec.enc_read_stream.last_header[0] is None:
-                # print '\tgetting hdr, acquiring lock'
-                conn.codec.stream_lock.acquire()
-
-                conn.codec.recv_encrypted_header()
-                # print '\treceived header, keeping lock'
-                if conn.codec.enc_read_stream.last_header == (None, None):
-                    sys.exit(1)
-                    return False
-            
-            if conn.codec.enc_read_stream.last_header[0] is not None:
-                # print '\tgetting data, lock should still be held'
-                cmd, payload = conn.codec.recv_encrypted_body()
-                if cmd == None:
-                    # print '\tcould not read full; leaving lock and should wake up again later'
-                    # will come back later and get the data
-                    # hopefully select will wake us up again (when september ends)
-                    continue
-
-                # print '\treleasing stream lock'
-
-                spot_cmd = SpotifyCommand(cmd)
-
+            command, payload = conn.codec.read_packet()
+            if command is not None:
+                spot_cmd = SpotifyCommand(command)
                 # self.incoming_queue.put((conn, (spot_cmd, payload)))
-
                 # process it now, dont' use process queue
-                # print 'processing', spot_cmd
                 conn.handle(spot_cmd, payload)
-
-                conn.codec.stream_lock.release()
 
         for conn in write:
             # print conn, 'is ready to write'
@@ -164,7 +133,7 @@ class ProxyConnection(object):
                         got_lock = False
 
         for conn in execptional:
-            print '!!! execptional on', conn
+            print('!!! execptional on', conn)
             return False
 
         # self.process_one()
@@ -194,13 +163,13 @@ class Connection(object):
         self.handlers = {}
 
     def __repr__(self):
-        return '%s connection' % self.name
+        return f"{self.name} connection"
 
     def handle(self, cmd, payload):
         if cmd not in self.handlers:
-            print '%r received unknown cmd %r' % (self, cmd)
-            print 'contained the following payload:'
-            print hexdump.hexdump(payload)
+            print(f"{self!r} received unknown cmd {cmd!r}")
+            print('contained the following payload:')
+            print(hexdump.hexdump(payload))
             return False
 
         handler, obj_cls = self.handlers[cmd]

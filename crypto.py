@@ -1,69 +1,66 @@
-from __future__ import absolute_import, division, print_function
+
 
 import os
 
 import pyshn as shn
 import hashlib
 import hmac
+from pathlib import Path
 
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import (dh, padding, rsa, utils)
 
 
-def bin2bn(data):
-    x = 0
-    n = len(data)
-    for i, d in enumerate(data):
-        x += ord(d) * 256**(n-i-1)
-    return x
+PRIVATE_KEY_PEM_FILE = Path('ourserver_private_key.pem')
 
-def bn2bin(bn, length=None):
-    data = str()
-    while bn > 0:
-        data += chr(bn & 0xFF)
-        bn = bn >> 8
-    if len(data) < length:
-        data += '\0' * (length - len(data))
-    return data[::-1]
+
+def int_from_bytes(data):
+    return int.from_bytes(data, 'big')
+
+
+def int_to_bytes(bn, length=None):
+    if length is None:
+        length = (bn.bit_length() + 7) // 8
+    return bn.to_bytes(length, 'big')
+
+
+def public_key_to_bytes(public_key):
+    return int_to_bytes(public_key.public_numbers().y)
+
+
+def load_rsa_private_key(key_file):
+    if not key_file.is_file():
+        print(f"Cannot open private key pem file {key_file}")
+        return
+
+    private_key = serialization.load_pem_private_key(
+        key_file.read_bytes(),
+        password=None,
+        backend=default_backend())
+    return private_key
+
+
+def load_rsa_public_key_bytes(key_file=PRIVATE_KEY_PEM_FILE)
+    if key_file.is_file():
+        private_key = load_rsa_private_key(key_file)
+    else:
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048
+        )
+        # TODO: and serialize private key
+    return public_key_to_bytes(private_key.public_key())
+
 
 def gen_signature(pub):
     key_index = 0
     key_pub_prime = 0x10001
 
-    priv_key = bin2bn(str(bytearray[
-        0xAC, 0xE0, 0x46, 0x0B, 0xFF, 0xC2, 0x30, 0xAF, 0xF4, 0x6B, 
-        0xFE, 0xC3, 0xBF, 0xBF, 0x86, 0x3D, 0xA1, 0x91, 0xC6, 0xCC, 
-        0x33, 0x6C, 0x93, 0xA1, 0x4F, 0xB3, 0xB0, 0x16, 0x12, 0xAC, 
-        0xAC, 0x6A, 0xF1, 0x80, 0xE7, 0xF6, 0x14, 0xD9, 0x42, 0x9D, 
-        0xBE, 0x2E, 0x34, 0x66, 0x43, 0xE3, 0x62, 0xD2, 0x32, 0x7A, 
-        0x1A, 0x0D, 0x92, 0x3B, 0xAE, 0xDD, 0x14, 0x02, 0xB1, 0x81, 
-        0x55, 0x05, 0x61, 0x04, 0xD5, 0x2C, 0x96, 0xA4, 0x4C, 0x1E, 
-        0xCC, 0x02, 0x4A, 0xD4, 0xB2, 0x0C, 0x00, 0x1F, 0x17, 0xED, 
-        0xC2, 0x2F, 0xC4, 0x35, 0x21, 0xC8, 0xF0, 0xCB, 0xAE, 0xD2, 
-        0xAD, 0xD7, 0x2B, 0x0F, 0x9D, 0xB3, 0xC5, 0x32, 0x1A, 0x2A, 
-        0xFE, 0x59, 0xF3, 0x5A, 0x0D, 0xAC, 0x68, 0xF1, 0xFA, 0x62, 
-        0x1E, 0xFB, 0x2C, 0x8D, 0x0C, 0xB7, 0x39, 0x2D, 0x92, 0x47, 
-        0xE3, 0xD7, 0x35, 0x1A, 0x6D, 0xBD, 0x24, 0xC2, 0xAE, 0x25, 
-        0x5B, 0x88, 0xFF, 0xAB, 0x73, 0x29, 0x8A, 0x0B, 0xCC, 0xCD, 
-        0x0C, 0x58, 0x67, 0x31, 0x89, 0xE8, 0xBD, 0x34, 0x80, 0x78, 
-        0x4A, 0x5F, 0xC9, 0x6B, 0x89, 0x9D, 0x95, 0x6B, 0xFC, 0x86, 
-        0xD7, 0x4F, 0x33, 0xA6, 0x78, 0x17, 0x96, 0xC9, 0xC3, 0x2D, 
-        0x0D, 0x32, 0xA5, 0xAB, 0xCD, 0x05, 0x27, 0xE2, 0xF7, 0x10, 
-        0xA3, 0x96, 0x13, 0xC4, 0x2F, 0x99, 0xC0, 0x27, 0xBF, 0xED, 
-        0x04, 0x9C, 0x3C, 0x27, 0x58, 0x04, 0xB6, 0xB2, 0x19, 0xF9, 
-        0xC1, 0x2F, 0x02, 0xE9, 0x48, 0x63, 0xEC, 0xA1, 0xB6, 0x42, 
-        0xA0, 0x9D, 0x48, 0x25, 0xF8, 0xB3, 0x9D, 0xD0, 0xE8, 0x6A, 
-        0xF9, 0x48, 0x4D, 0xA1, 0xC2, 0xBA, 0x86, 0x30, 0x42, 0xEA, 
-        0x9D, 0xB3, 0x08, 0x6C, 0x19, 0x0E, 0x48, 0xB3, 0x9D, 0x66, 
-        0xEB, 0x00, 0x06, 0xA2, 0x5A, 0xEE, 0xA1, 0x1B, 0x13, 0x87, 
-        0x3C, 0xD7, 0x19, 0xE6, 0x55, 0xBD
-    ]))
-
-DH_generator = bin2bn(str(bytearray([ 0x02 ])))
-DH_prime = bin2bn(str(bytearray([
+DH_generator = 2
+DH_prime = int_from_bytes([
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xc9,
         0x0f, 0xda, 0xa2, 0x21, 0x68, 0xc2, 0x34, 0xc4, 0xc6,
         0x62, 0x8b, 0x80, 0xdc, 0x1c, 0xd1, 0x29, 0x02, 0x4e,
@@ -74,90 +71,58 @@ DH_prime = bin2bn(str(bytearray([
         0x37, 0x4f, 0xe1, 0x35, 0x6d, 0x6d, 0x51, 0xc2, 0x45,
         0xe4, 0x85, 0xb5, 0x76, 0x62, 0x5e, 0x7e, 0xc6, 0xf4,
         0x4c, 0x42, 0xe9, 0xa6, 0x3a, 0x36, 0x20, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff ])))
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff])
 
 class Crypto(object):
     def __init__(self):
-        self.private_key = None
-        self.public_key = None
-        self.remote_key = None
+        self._private_key = None
+        self._public_key = None
+        self.public_key_bytes = None
+        # self.remote_key = None
         self.shared_key = None
         self.send_key = None
-        self.send_cipher = None
+        # self.send_cipher = None
         self.recv_key = None
-        self.recv_cipher = None
+        # self.recv_cipher = None
         self.challenge = None
+        self.signing_key_file = PRIVATE_KEY_PEM_FILE
 
     def generate_keys(self, key = None):
-        if key is not None:
-            self.private_key = key
-        else:
-            self.private_key = '\0' + os.urandom(0x5f)
+        dh_numbers = dh.DHParameterNumbers(p=DH_prime, g=DH_generator)
+        dh_parameters = dh_numbers.parameters(backend=default_backend())
+        # dh_parameters = dh.generate_parameters(generator=DH_generator, key_size=95 * 8)  95??
+        self._private_key = dh_parameters.generate_private_key()
+        self._public_key = self.private_key.public_key()
+        self.public_key_bytes = public_key_to_bytes(self._public_key)
+        print(f"Generated DH keys")
+        return self
 
-        self.public_key = bn2bin(
-                pow(DH_generator, bin2bn(self.private_key), DH_prime), 0x60)
+    def compute_shared_key(self, remote_key):
+         self.shared_key = self._private_key.exchange(remote_key)
 
-    def compute_shared_key(self, remote):
-        self.remote_key = remote
-        self.shared_key = bn2bin(
-                pow(bin2bn(remote), bin2bn(self.private_key), DH_prime), 0x60)
+    def sign_public_key(self):
+        if self.public_key_bytes is None:
+            return
+        rsa_private_key = load_rsa_private_key(self.signing_key_file)        
+        return = rsa_private_key.sign(self.public_key_bytes), padding.PKCS1v15(), hashes.SHA1())
 
-    def sign_public_key(self, key_fname):
-        sha1_prefix = [0] * 256
-
-        to_end = 256 - 38
-
-        sha1_prefix[0] = 0
-        sha1_prefix[1] = 1
-        for i in xrange(2, to_end + 2):
-            sha1_prefix[i] = 0xff
-
-        server_hash = list(hashlib.sha1(self.public_key).digest())
-
-        hash_padding = sha1_prefix[:to_end + 2 + 1]
-
-        asn1 = [0x30,0x21,0x30,0x09,0x06,0x05,0x2b,0x0e,0x03,0x02,0x1a,0x05,0x00,0x04,0x14]
-
-        server_hash = hash_padding + asn1 + server_hash
-        server_hash = str(bytearray(server_hash))
-
-        with open(key_fname, "rb") as key_file:
-            private_key = serialization.load_pem_private_key(
-                key_file.read(),
-                password=None,
-                backend=default_backend()
-            )
-
-            # client does ciphertext ^ pubexp % pubkey and compares to their hash
-            # so we want ciphertext = hash ^ privkey % pubexp, to sign
-
-            encrypted_num = pow(bin2bn(server_hash),
-                private_key.private_numbers().d,
-                private_key.public_key().public_numbers().n
-            )
-
-            encrypted = bn2bin(encrypted_num)
-
-        return encrypted
-
-    def compute_challenge(self, client_packet, server_packet):
+    def compute_challenge(self, client_packet, server_packet): # SpotifyCodec.setup_encrypted_streams used instead
         data = bytes()
         for i in range(1,6):
             h = hmac.new(self.shared_key, digestmod=hashlib.sha1)
             h.update(client_packet)
             h.update(server_packet)
-            if i is not None:
-                h.update(chr(i))
+            h.update(i)
             data += h.digest()
 
-        h = hmac.new(data[:0x14], digestmod=hashlib.sha1)
-        h.update(client_packet)
-        h.update(server_packet)
-        self.challenge = h.digest()
+        mac = hmac.new(data[0:0x14], digestmod=hashlib.sha1)
+        mac.update(client_packet)
+        mac.update(server_packet)
+        self.challenge = mac.digest()
 
         self.send_key = data[0x14:0x34]
-        self.send_cipher = shn.Shannon(self.send_key)
+        # self.send_cipher = shn.Shannon(self.send_key)
 
         self.recv_key = data[0x34:0x54]
-        self.recv_cipher = shn.Shannon(self.recv_key)
+        # self.recv_cipher = shn.Shannon(self.recv_key)
 

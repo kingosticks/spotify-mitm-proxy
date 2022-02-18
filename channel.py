@@ -1,7 +1,7 @@
 # from librespot (https://github.com/plietar/librespot)
 # Licensed under the MIT License.
 
-from __future__ import absolute_import, division, print_function
+
 
 from enum import Enum
 import struct
